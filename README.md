@@ -12,7 +12,7 @@ Add your team (name + members) on an empty `- ` line below:
 - No Overfitting, Just Overthinking: Greta Simeliunaite and Csenge Soter
 - R.-Bytes-Loss(): Deim, Tartarotti, Weber
 - commit(ment) issues: Tim Brecht, Panna Bodnar, Chiara D'Amico
-- Git Happens: Sophia Leah Ravner, Alesia Kokonaj
+- Git Happens: Sophia Leah Ravner, Alesia Kokonaj, Jennifer Emilio
 - The Biased Priors: Ryan McCann, Lorenz Rausch, Lorenz Bodner
 - The Matrix Confusers : Thomas, Isabella 
 - Maximum Likelihood of passing: Peter Sparks, Pail Boissot
