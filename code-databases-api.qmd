@@ -1,0 +1,364 @@
+---
+title: "Databases and APIs"
+author: <sdgsad
+execute:
+  echo: true
+  eval: false
+  output: false
+---
+
+This document collects the code from the slides so you can run it yourself. Put the two data files linked on the course page (`synthetic_unemployment_data_large.parquet` and `imdb.parquet`) and `cases.csv` from the first lecture into a folder called `data/` next to this file.
+
+```{r}
+library(tidyverse)
+library(httr)
+library(eurostat)
+library(arrow)
+library(duckdb)
+library(glue)
+library(data.table)
+```
+
+# (REST) APIs
+
+An API request consists of a request line (the HTTP method, e.g. GET or POST, plus a URL), a header with metadata such as authentication, and optionally a body with instructions, usually as JSON. The server answers with a status code (200 OK, 400 Bad Request, 429 Too Many Requests, ...) and the content as JSON, HTML or XML.
+
+## GET from R — Eurostat
+
+A GET request asks the server for information. You can try it in the browser first:
+
+https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/nama_10_gdp?format=JSON&time=2023&unit=CP_MEUR&na_item=B1GQ
+
+The URL has a fixed part `{host_url}/{service}/{version}/` and a dynamic part `{response_type}/{datasetCode}?{format}&{filters}`. The details are in the [Eurostat API documentation](https://ec.europa.eu/eurostat/web/user-guides/data-browser/api-data-access/api-detailed-guidelines/api-statistics). In R we keep the fixed part and the dataset in the URL and pass the filters as a list, which `httr` turns into the `?key=value&...` part for us:
+
+```{r}
+url <- paste0(
+  "https://ec.europa.eu/eurostat/api/",
+  "dissemination/statistics/1.0/data/nama_10_gdp?"
+)
+
+params <- list(
+  time = "2023",
+  unit = "CP_MEUR",
+  na_item = "B1GQ",
+  format = "JSON"
+)
+
+response <- GET(url = url, query = params)
+
+status_code(response) # should be 200
+
+data <- content(response) # parses the JSON into a nested list
+```
+
+The response is a nested list. The values are stored under `data$value`, keyed by a position index, and the country belonging to each position is stored under `data$dimension$geo$category$index`. We take both apart and join them on that index:
+
+```{r}
+indices <- data$dimension$geo$category$index
+
+gdp_data <- data.frame(
+    geo = names(indices),
+    index = as.character(unlist(indices))
+  ) %>%
+  left_join(
+    enframe(unlist(data$value), name = "index", value = "values"),
+    by = "index"
+  ) %>%
+  select(geo, values)
+
+head(gdp_data)
+```
+
+## Using R Packages — Eurostat
+
+Packages like `eurostat` wrap the API and do the unnesting for us. We get the same data faster and cleaner, but we depend on the package being maintained:
+
+```{r}
+#| eval: false
+gdp_data <- get_eurostat(
+    id = "nama_10_gdp",
+    filters = list(
+      time = "2023",
+      unit = "CP_MEUR",
+      na_item = "B1GQ"
+    )
+  ) %>%
+  select(geo, values)
+
+head(gdp_data)
+```
+
+To keep data up to date automatically, put the download, processing and upload steps into a script and schedule it (cron job on Unix, Task Scheduler on Windows).
+
+## GET from the Browser — Eurostat in OJS
+
+The same request also works from JavaScript in the browser. This is the "Client Request" workflow from the slides: instead of downloading the data once and uploading a finished chart, the reader's browser asks Eurostat for the data every time the page is opened, so the chart is always up to date. The cells below are Observable JavaScript (OJS) cells, which Quarto runs in the browser when you render this file. They are switched on with `//| eval: true`, so they work even though the R chunks are not evaluated.
+
+```{ojs}
+//| eval: true
+//| output: true
+viewof countries = Inputs.checkbox(
+  ["AT", "DE", "ES", "FR", "IT", "NL", "PL", "SE"],
+  {label: "Countries", value: ["AT", "DE", "IT"]}
+)
+```
+
+We build the URL just like in R: the fixed part plus the filters. `URLSearchParams` turns the list into the `?key=value&...` part. Each country is its own `geo=` parameter. `fetch()` sends the GET request, and `.json()` parses the response:
+
+```{ojs}
+//| eval: true
+//| output: true
+//| echo: true
+url = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/nama_10_pc?" +
+  new URLSearchParams([
+    ["format", "JSON"],
+    ["unit", "CP_EUR_HAB"],
+    ["na_item", "B1GQ"],
+    ["sinceTimePeriod", "2000"],
+    ...countries.map(geo => ["geo", geo])
+  ])
+
+response = fetch(url).then(r => r.json())
+
+response
+```
+
+The response has the same structure as in R. `dimension.geo.category.index` and `dimension.time.category.index` give each country and year its position, and `value` holds the numbers. Again we need to untangle the response to use it as data.
+
+```{ojs}
+//| eval: true
+//| echo: true
+//| output: true
+gdp_data = {
+  if (!response.value) return [] // no country selected
+  const geo = response.dimension.geo.category.index   // {"AT": 0, "DE": 1, ...}
+  const time = response.dimension.time.category.index // {"2000": 0, "2001": 1, ...}
+  const nTime = Object.keys(time).length
+  const rows = []
+  for (const [g, gi] of Object.entries(geo)) {
+    for (const [t, ti] of Object.entries(time)) {
+      const value = response.value[gi * nTime + ti]
+      if (value !== undefined) rows.push({geo: g, year: t, gdp: value})
+    }
+  }
+  return rows
+}
+
+
+```
+
+Finally the line chart with Vega-Lite, as in the coding setup lecture:
+
+```{ojs}
+//| eval: true
+//| output: true
+import { vl } from "@vega/vega-lite-api-v5"
+
+vl.markLine({ point: true })
+  .data(gdp_data)
+  .encode(
+    vl.x().fieldT("year").title(null).axis({ grid: false, format: "%Y" }),
+    vl.y().fieldQ("gdp").title("GDP per capita (€)"),
+    vl.color().fieldN("geo").legend({ orient: "top", title: null }),
+    vl.tooltip(["geo", "year", "gdp"])
+  )
+  .width(600)
+  .render({ renderer: "svg" })
+```
+
+## POST from R — OpenRouter
+
+A POST request sends instructions to the server in the body, usually as JSON, and can return data as well. As an example we let GPT-4.1 nano classify the sentiment of movie reviews. We reach it through [OpenRouter](https://openrouter.ai/docs/quickstart), which offers models from many providers (OpenAI, Anthropic, Google, Meta, ...) behind one API in the same format as the OpenAI API, so switching models only means changing the `model` string. You need your own OpenRouter API key.
+
+```{r}
+key <- read_csv("keys/key_openrouter.txt")
+```
+
+We take the first five reviews and write the instructions for the model (the "system role"):
+
+```{r}
+prompts <- read_parquet("data/imdb.parquet") %>%
+  select(review) %>%
+  distinct() %>%
+  filter(row_number() <= 20)
+
+system_role <- glue("
+  Classify movie reviews as positive or negative.
+  Only return the string 'positive' or 'negative'.
+  Do not respond with any explanations.
+  ")
+
+answers <- data.frame(
+  review = character(),
+  predicted = character()
+  )
+```
+
+Then we loop through the reviews and send one request per review. The key goes into the header, the model, the messages and the temperature into the body. `temperature = 0` makes the answers as deterministic as possible:
+
+```{r}
+for (i in 1:nrow(prompts)) {
+  response_raw <- POST(
+    url = "https://openrouter.ai/api/v1/chat/completions",
+    add_headers(Authorization = paste("Bearer", key)),
+    encode = "json",
+    body = list(
+      model = "openai/gpt-4.1-nano",
+      messages = list(
+        list(role = "system", content = system_role),
+        list(role = "user", content = prompts$review[i])
+        ),
+      temperature = 0
+    )
+  )
+  answers[i, 1] <- prompts$review[i]
+  answers[i, 2] <- content(response_raw)$choices[[1]]$message$content
+  progress <- round(i/nrow(prompts)*100)
+  if (i == 1) {cat(" Progress:\n")}
+  if (i%%10 == 0) {cat(glue(progress, "% \n"))}
+}
+
+answers
+```
+
+If something goes wrong, check `status_code(response_raw)` and `content(response_raw)`: a 401 means the key is wrong, a 429 that you sent too many requests or have no credit left.
+
+## POST from R — Ollama
+
+We can also host a service ourselves and talk to it through its API. [Ollama](https://docs.ollama.com) runs language models on your own device. After installing it, download a model in the terminal (not in R):
+
+```{sh}
+ollama pull llama3.2
+ollama list
+```
+
+Ollama now listens on `http://localhost:11434` (opening that address in the browser should say "Ollama is running"). If it does not, start the server yourself with `ollama serve`. To run it on a different address or port, set `OLLAMA_HOST` before starting the server, and change the URL in the R code below to match:
+
+```{sh}
+export OLLAMA_HOST=localhost:11434
+```
+
+The loop is the same as before, only the URL and the body change, and no key is needed because the server runs on your machine:
+
+```{r}
+for (i in 1:nrow(prompts)) {
+  body <- list(
+    prompt = paste(
+      system_role,
+      "The review is:",
+      prompts$review[i]
+    ),
+    max_tokens = 200,
+    temperature = 0,
+    stream = FALSE,
+    model = "llama3.2"
+  )
+  ollama_response <- POST(
+    url = "http://localhost:11434/api/generate",
+    body = body,
+    encode = "json"
+  )
+  answers[i, 1] <- prompts$review[i]
+  answers[i, 2] <- content(ollama_response)$response
+  progress <- round(i/nrow(prompts)*100)
+  if (i == 1) {cat(" Progress:\n")}
+  if (i%%10 == 0) {cat(glue(progress, "% \n"))}
+}
+
+answers
+```
+
+# Databases and Data Wrangling
+
+## Parquet
+
+Parquet is a columnar, compressed and typed file format. It is usually around ten times smaller than a csv and much faster to read. To see the difference we write the parquet file from the course page to a csv and compare size and reading time of both:
+
+```{r}
+data <- read_parquet("data/synthetic_unemployment_data_large.parquet")
+
+write_csv(data, "data/synthetic_unemployment_data_large.csv")
+
+size_csv <- file.size("data/synthetic_unemployment_data_large.csv")
+size_parquet <- file.size("data/synthetic_unemployment_data_large.parquet")
+
+rm(data)
+gc() # free the memory before timing
+
+start_time <- Sys.time()
+data <- read_csv("data/synthetic_unemployment_data_large.csv")
+end_time <- Sys.time()
+time_csv <- end_time - start_time
+
+glue("csv: {round(size_csv / 1e6)} MB, parquet: {round(size_parquet / 1e6)} MB")
+```
+
+Writing a parquet file yourself works the same way. A higher compression level gives smaller files but takes longer to write:
+
+```{r}
+write_parquet(
+  data,
+  "data/synthetic_unemployment_data_large.parquet",
+  compression = "gzip",
+  compression_level = 9
+  )
+
+rm(data)
+gc()
+```
+
+## DuckDB
+
+DuckDB is a database system that runs inside R without a server. It executes SQL queries directly on the parquet file, so only the columns and rows we ask for are loaded into memory:
+
+```{r}
+con <- dbConnect(duckdb())
+
+cols <- c("target_high", "benefits_amount", "unemployment_1m")
+
+start_time <- Sys.time()
+data <- dbGetQuery(con, glue("
+  SELECT {paste(cols, collapse = ', ')}
+  FROM 'data/synthetic_unemployment_data_large.parquet'
+  WHERE promised_employment == 0
+"))
+end_time <- Sys.time()
+time_parquet <- end_time - start_time
+
+dbDisconnect(con, shutdown = TRUE)
+
+glue("csv: {round(time_csv, 1)} seconds, DuckDB: {round(time_parquet, 1)} seconds")
+```
+
+## Tidyverse
+
+The tidyverse gives us a consistent grammar for data wrangling: `dplyr` (filter, select, mutate, summarize), `tidyr` (pivot, separate, unite), `readr` (import and export), `stringr` (strings), `lubridate` (dates) and the pipe `%>%`, which passes the result of one step on to the next. Here we split the court from the case number, count the cases per court and month, and keep only courts with more than 100 cases in total:
+
+```{r}
+data <- read_csv("data/cases.csv")
+
+plot_data <- data %>%
+  separate(case_nr, c("court", "case_nr"), ", ") %>%
+  group_by(court, month) %>%
+  count(name = "cases") %>%
+  group_by(court) %>%
+  mutate(sum_cases = sum(cases, na.rm = TRUE)) %>%
+  filter(sum_cases > 100) %>%
+  ungroup()
+```
+
+## data.table
+
+`data.table` does the same with a concise `dt[i, j, by]` syntax: `i` selects rows, `j` computes columns and `by` groups. `:=` modifies the table in place, `.N` counts rows, and chaining `[...][...]` plays the role of the pipe. It is very fast and memory efficient on large data:
+
+```{r}
+dt <- fread("data/cases.csv")
+
+plot_data <-
+  dt[, c("court", "case_nr") := tstrsplit(case_nr, ", ")
+    ][, .(cases = .N), by = .(court, month)
+    ][, sum_cases := sum(cases), by = court
+    ][sum_cases > 100]
+```
+
+Alternatives in other languages are pandas and polars in Python (polars also exists for R) and Arquero in JavaScript.

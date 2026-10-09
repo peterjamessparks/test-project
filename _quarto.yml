@@ -6,11 +6,14 @@ project:
 website:
   navbar:
     left:
-      - text: "Home"
+      - text: "Index"
         href: index.qmd
+      - text: "Coding Notebook APIs"
+        href: code-databases-api.qmd
 format:
   html:
     page-layout: article
     css: style.css
 execute:
   freeze: auto
+author: Lukas Schmoigl

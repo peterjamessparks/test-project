@@ -1,8 +1,8 @@
 ---
-author: Lukas Schmoigl
 title: Quarto Example
 bibliography: bibliography.bib
 ---
+
 
 
 # Example Repo
