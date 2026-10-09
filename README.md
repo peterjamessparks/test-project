@@ -16,7 +16,7 @@ Add your team (name + members) on an empty `- ` line below:
 - The Biased Priors: Ryan McCann, Lorenz Rausch, Lorenz Bodner
 - The Matrix Confusers : Thomas, Isabella 
 - Maximum Likelihood of passing: Peter Sparks, Pail Boissot
-- 
+- Code & Cognition: Emma Boydens, Jens Vorsselmans, Marie Pittevils
 
 Don't forget to pick a funny name that is a pun on the contents of this class! Some inspirations from the past:
 
