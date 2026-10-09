@@ -3,6 +3,22 @@ title: Quarto Example
 bibliography: bibliography.bib
 ---
 
+
+# New Headline
+
+:::: {.columns}
+
+::: {.column width=50% #columnById}
+SOme text left
+:::
+
+::: {.column width=50% .myColumn}
+some text right
+:::
+
+::::
+
+
 {{< include src/utilities.qmd >}}
 
 ```{r}

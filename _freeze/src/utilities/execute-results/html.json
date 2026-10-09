@@ -1,9 +1,11 @@
 {
-  "hash": "03a1805e20a377beb5b60ab51f68af98",
+  "hash": "aded335cf912d98bae8e5d94423daa59",
   "result": {
     "engine": "knitr",
-    "markdown": "\n\n\n::: {.cell}\n\n```{.r .cell-code}\nsome_text <- \"Hey we can reference it!\"\n```\n:::\n\n",
-    "supporting": [],
+    "markdown": "\n\n\n::: {.cell}\n\n:::\n\n",
+    "supporting": [
+      "utilities_files"
+    ],
     "filters": [
       "rmarkdown/pagebreak.lua"
     ],
