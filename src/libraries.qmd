@@ -1,4 +1,0 @@
----
-title: "Some library calls"
-author: Data Science CLass
----

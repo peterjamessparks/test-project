@@ -3,6 +3,11 @@ title: Quarto Example
 bibliography: bibliography.bib
 ---
 
+{{< include src/utilities.qmd >}}
+
+```{r}
+print(some_text)
+```
 
 
 # Example Repo

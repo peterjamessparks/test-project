@@ -1,0 +1,6 @@
+
+
+```{r}
+#| echo: false
+some_text <- "Hey we can reference it!"
+```
